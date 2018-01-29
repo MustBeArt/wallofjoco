@@ -28,6 +28,9 @@ from PIL import ImageTk, Image
 from collections import deque
 import threading
 
+BADGE_TYPE_JOCO = 0x0b25
+BADGE_TYPE_ANDNXOR = 0x049e
+
 BADGE_YEAR = "yr"     # year (Appearance field) in most recent advertisement
 BADGE_YEARS = "yrs"   # list of years seen for this address
 BADGE_NAME = "nm"     # badge name (Complete Local Name) in most recent
@@ -38,15 +41,20 @@ BADGE_TIME = "tm"     # time of most recent advertisement received
 BADGE_ADDR = "ad"     # Advertising Address for this badge (assumed constant)
 BADGE_CNT = "n"       # number of advertisements received from this address
 BADGE_ID_FAKED = "faked"    # present if multiple IDs seen for this address
+BADGE_CLLD = "lld"    # claimed last level dispensed
+BADGE_CSCORE = "csc"  # claimed current score
+BADGE_TYPE = "ty"     # Badge type (Company ID)
+
+MAIN_DISPLAY_FONTSIZE = 44
 
 
 class BTAdapter (threading.Thread):
     def __init__(self, master, btQueue):
         threading.Thread.__init__(self)
         self.btQueue = btQueue
-        
+
         self.stop_event = threading.Event()
-        
+
         btlib = find_library("bluetooth")
         if not btlib:
             raise Exception(
@@ -54,34 +62,34 @@ class BTAdapter (threading.Thread):
                 " (need to install bluez)"
             )
         self.bluez = CDLL(btlib, use_errno=True)
-    
+
         dev_id = self.bluez.hci_get_route(None)
-        
+
         self.sock = socket(AF_BLUETOOTH, SOCK_RAW, BTPROTO_HCI)
         if not self.sock:
             print("Failed to open Bluetooth")
             sys.exit(1)
-            
+
         self.sock.bind((dev_id,))
 
-        err = self.bluez.hci_le_set_scan_parameters(self.sock.fileno(), 0, 0x10, 0x10, 0, 0, 1000);
+        err = self.bluez.hci_le_set_scan_parameters(self.sock.fileno(), 0, 0x10, 0x10, 0, 0, 1000)
         if err < 0:
             raise Exception("Set scan parameters failed")
             # occurs when scanning is still enabled from previous call
-        
+
         # allows LE advertising events
         hci_filter = struct.pack(
-            "<IQH", 
-            0x00000010, 
-            0x4000000000000000, 
+            "<IQH",
+            0x00000010,
+            0x4000000000000000,
             0
         )
         self.sock.setsockopt(SOL_HCI, HCI_FILTER, hci_filter)
-        
+
         err = self.bluez.hci_le_set_scan_enable(
             self.sock.fileno(),
-            1,  # 1 - turn on;  0 - turn off
-            0, # 0-filtering disabled, 1-filter out duplicates
+            1,    # 1 - turn on;  0 - turn off
+            0,    # 0-filtering disabled, 1-filter out duplicates
             1000  # timeout
         )
         if err < 0:
@@ -93,7 +101,7 @@ class BTAdapter (threading.Thread):
 
     def stop(self):
         self.stop_event.set()
-    
+
     def stopped(self):
         return self.stop_event.is_set()
 
@@ -101,11 +109,11 @@ class BTAdapter (threading.Thread):
         if self.sock is None:
             print("Double clean_up", flush=True)
             return
-            
+
         err = self.bluez.hci_le_set_scan_enable(
             self.sock.fileno(),
-            0,  # 1 - turn on;  0 - turn off
-            0, # 0-filtering disabled, 1-filter out duplicates
+            0,    # 1 - turn on;  0 - turn off
+            0,    # 0-filtering disabled, 1-filter out duplicates
             1000  # timeout
             )
         if err < 0:
@@ -117,25 +125,26 @@ class BTAdapter (threading.Thread):
 
         self.sock.close()
         self.sock = None
-        
+
     def run(self):
         while True:
             data = self.sock.recv(1024)
             badge_time = time.time()
-            self.btQueue.appendleft((badge_time,data))
+            self.btQueue.appendleft((badge_time, data))
             if self.stopped():
                 self.clean_up()
                 break
+
 
 class Logger:
     def __init__(self):
         self.intercepts = []
         self.count = 0
-        
+
     def _writeout(self):
         filename = time.strftime("%Y%m%d%H%M%S", time.gmtime(time.time())) + ".log"
         with open(filename, "w+") as f:
-            for ts,data in self.intercepts:
+            for ts, data in self.intercepts:
                 hex = ''.join('{0:02x}'.format(x) for x in data)
                 print("%f %s" % (ts, hex), file=f)
 
@@ -149,15 +158,15 @@ class Logger:
 
     def closeout(self):
         self._writeout()
-                
-        
+
+
 class LiveDisplay:
     def __init__(self, master):
         self.live_canvas = Canvas(master, width=494, height=430, bg=tablebg, borderwidth=0, highlightthickness=0)
         self.live_text = self.live_canvas.create_text(tmargin, tmargin, anchor=NW, text="", font=("Droid Sans Mono", 44))
         self.live_canvas.place(x=screenw-margin, y=screenh-margin, anchor=SE)
         self.lines = deque()
-        
+
     def intercept(self, badge):
         line = "%s %s" % (badge[BADGE_ID], badge[BADGE_NAME])
         if len(self.lines) >= 6:
@@ -172,12 +181,12 @@ class SmoothScroller:
         self.wait = wait
         self.height = height
         self.canvas = Canvas(master, width=width, height=height, bg=tablebg, borderwidth=0, highlightthickness=0)
-        self.text = self.canvas.create_text(tmargin, tmargin, anchor=NW, text="", font=("Droid Sans Mono", 44))
+        self.text = self.canvas.create_text(tmargin, tmargin, anchor=NW, text="", font=("Droid Sans Mono", MAIN_DISPLAY_FONTSIZE))
         self.canvas.place(x=x, y=y, anchor=NW)
         self.scroll()
-             
+
     def scroll(self):
-        left,top,right,bottom = self.canvas.bbox(ALL)
+        left, top, right, bottom = self.canvas.bbox(ALL)
         if bottom > self.height:
             self.canvas.move(self.text, 0, -1)
         elif top < 0:
@@ -186,14 +195,15 @@ class SmoothScroller:
             else:
                 self.canvas.move(self.text, 0, -top + self.height)
         self.master.after(self.wait, self.scroll)
-        
 
+
+"""
 class NamesDisplay (SmoothScroller):
     def __init__(self, master):
         SmoothScroller.__init__(self, master, width=304, height=680, x=margin+912+margin, y=350, wait=20)
         self.lines = deque()
         self.scroll()
-        
+
     def intercept(self, badge):
         if badge[BADGE_NAME] not in self.lines:
             #print("BADGE NAME .%s." % badge[BADGE_NAME])
@@ -201,21 +211,22 @@ class NamesDisplay (SmoothScroller):
             #print("LINE .%s." % line)
             self.lines.append(badge[BADGE_NAME])
             self.canvas.itemconfigure(self.text, text="\n".join(self.lines))
+"""
 
-        
+
 class BadgeDisplay (SmoothScroller):
     def __init__(self, master):
         self.master = master
         self.badges = {}
-        SmoothScroller.__init__(self, master, width=912, height=680, x=margin, y=350, wait=30)
+        SmoothScroller.__init__(self, master, width=1216, height=750, x=margin, y=275, wait=30)
         self.lines = deque()
         self.scroll()
         self.updater()
-    
+
     def updater(self):
         self.update_display()
-        self.master.after(5000, self.updater)        
-        
+        self.master.after(5000, self.updater)
+
     def format_time_ago(self, t, timenow):
         age = timenow - t
         if age < 5.0:
@@ -229,24 +240,33 @@ class BadgeDisplay (SmoothScroller):
             if hours > 0:
                 return "%3d:%02d:%02d" % (hours, minutes, secs)
             else:
-                return "    %2d:%02d" % (minutes, secs)            
-        
+                return "    %2d:%02d" % (minutes, secs)
+
     def update_display(self):
         timenow = time.time()
         self.lines = []
-        for _,b in self.badges.items():
+        for b in sorted(self.badges.values(), key=lambda badge: badge[BADGE_CSCORE], reverse=True):
             if BADGE_ID_FAKED in b:
                 flag = "*"
             else:
                 flag = " "
             ident = b[BADGE_ID]
             name = b[BADGE_NAME]
+            typ = b[BADGE_TYPE]
+            if typ == BADGE_TYPE_JOCO:
+                if b[BADGE_CSCORE] >= 2000:
+                    score = "%2d,%03d" % (b[BADGE_CSCORE]/1000, b[BADGE_CSCORE] % 1000)
+                else:
+                    score = " %5d" % b[BADGE_CSCORE]
+                if b[BADGE_CSCORE] > (b[BADGE_CLLD]+1)*250:   # eligible for a trinket
+                    flag = "!"
+            else:
+                score = "   N/A"
             t = self.format_time_ago(b[BADGE_TIME], timenow)
-            #line = "%s %s %s %s" % (flag, ident, name, t)
-            line = flag + " " + ident + " " + name + " "*(8-len(name)) + t
+            line = flag + " " + ident + " " + name + " "*(8-len(name)) + " " + score + " " + t
             self.lines.append(line)
             self.canvas.itemconfigure(self.text, text="\n".join(self.lines))
-            
+
     def intercept(self, badge):
         if badge[BADGE_ADDR] not in self.badges:
             badge[BADGE_IDS] = [badge[BADGE_ID]]
@@ -254,7 +274,7 @@ class BadgeDisplay (SmoothScroller):
             badge[BADGE_YEARS] = [badge[BADGE_YEAR]]
             badge[BADGE_CNT] = 1
             self.badges[badge[BADGE_ADDR]] = badge
-            #self.update_display()
+            # do not call self.update_display()
 
         else:
             b = self.badges[badge[BADGE_ADDR]]
@@ -271,9 +291,9 @@ class BadgeDisplay (SmoothScroller):
                 b[BADGE_YEARS].append(badge[BADGE_YEAR])
             if len(b[BADGE_IDS]) > 1:
                 b[BADGE_ID_FAKED] = True
-            #self.update_display()
+            # do not call self.update_display()
 
-            
+
 margin = 50
 tmargin = 5
 screenh = 1080
@@ -291,28 +311,29 @@ root.configure(background=bgcolor)
 heading = Label(root, text="Wall of JoCo", bg=bgcolor, font=("Droid Sans Mono", 120))
 heading.place(x=margin, y=margin-40, anchor=NW)
 credit = Label(root, text="Brought to you by Abraxas3D and Skunkwrx with thanks to AND!XOR and DEFCON Group San Diego",
-    fg="#888888", bg=bgcolor, font=("Droid Sans Mono", 9))
+               fg="#888888", bg=bgcolor, font=("Droid Sans Mono", 9))
 credit.place(x=margin+18, y=170, anchor=NW)
-badges_label = Label(root, text="Badges Seen", bg=bgcolor, font=("Droid Sans Mono", 50))
-badges_label.place(x=margin, y=250, anchor=NW)
-names_label = Label(root, text="Names", bg=bgcolor, font=("Droid Sans Mono", 50))
-names_label.place(x=margin+912+margin, y=250, anchor=NW)
+badges_label = Label(root, text="   ID  Name      Score      Seen", bg=bgcolor, font=("Droid Sans Mono", MAIN_DISPLAY_FONTSIZE))
+badges_label.place(x=margin, y=200, anchor=NW)
+# names_label = Label(root, text="Names", bg=bgcolor, font=("Droid Sans Mono", 50))
+# names_label.place(x=margin+912+margin, y=250, anchor=NW)
 live_label = Label(root, text="Intercepts", bg=bgcolor, font=("Droid Sans Mono", 60))
 live_label.place(x=margin+912+margin+304+margin, y=480, anchor=NW)
 
 img = ImageTk.PhotoImage(Image.open("badge_photo.png").convert("RGBA"))
-photo_panel = Label(root, image = img, borderwidth=0, bg=bgcolor)
+photo_panel = Label(root, image=img, borderwidth=0, bg=bgcolor)
 photo_panel.place(x=screenw-margin, y=margin, anchor=NE)
 
 badge_display = BadgeDisplay(root)
-names_display = NamesDisplay(root)
+# names_display = NamesDisplay(root)
 live_display = LiveDisplay(root)
 log = Logger()
+
 
 def badgeParse(data):
     """ If the advertisement data contains a valid badge beacon,
     return the parsed badge data structure. If not, return None."""
-    
+
     badge_address = ':'.join('{0:02x}'.format(x) for x in data[12:6:-1])
 
     index = 14
@@ -330,42 +351,48 @@ def badgeParse(data):
         elif packet_type == 0x19:   # Appearance
             badge_year = "%02X%d" % (packet_payload[0], packet_payload[1])
         elif packet_type == 0xFF:   # Manufacturer Specific Data
-            if packet_payload[1] == 0x0b and packet_payload[0] == 0x25:     # JoCo 2018
-                badge_id = "%02X%02X" % (packet_payload[3],packet_payload[2])
+            badge_type = (packet_payload[1] << 8) + packet_payload[0]
+            if badge_type == BADGE_TYPE_JOCO:
+                badge_id = "%02X%02X" % (packet_payload[3], packet_payload[2])
+                badge_claimed_lld = packet_payload[4]
+                badge_claimed_score = (packet_payload[5] << 8) + packet_payload[6]
+                badge = True
+            elif badge_type == BADGE_TYPE_ANDNXOR:
+                badge_id = "%02X%02X" % (packet_payload[3], packet_payload[2])
+                badge_claimed_lld = 0
+                badge_claimed_score = -1   # so it always sorts below JoCo badges
                 badge = True
             else:
                 badge = False
-                
+
     if badge and badge_name is not None and badge_year is not None:
-        return { BADGE_ADDR : badge_address,
-                  BADGE_ID   : badge_id,
-                  BADGE_NAME : badge_name,
-                  BADGE_YEAR : badge_year
-                  }
+        return {BADGE_ADDR:   badge_address,
+                BADGE_ID:     badge_id,
+                BADGE_NAME:   badge_name,
+                BADGE_YEAR:   badge_year,
+                BADGE_CLLD:   badge_claimed_lld,
+                BADGE_CSCORE: badge_claimed_score,
+                BADGE_TYPE:   badge_type}
     else:
         return None
 
 
-
 def processAdvertisement(cept):
-    timestamp,data = cept
+    timestamp, data = cept
     badge = badgeParse(data)
     if badge is not None:
         badge[BADGE_TIME] = timestamp
         live_display.intercept(badge)
-        names_display.intercept(badge)
+#        names_display.intercept(badge)
         badge_display.intercept(badge)
         log.intercept(cept)
 
-btQueue = deque(maxlen=1000)
-bt = BTAdapter(root, btQueue)
-bt.start()
 
 def signal_handler(signal, frame):
     bt.stop()
     log.closeout()
     root.quit()
-signal.signal(signal.SIGINT, signal_handler)
+
 
 def btPoller():
     while True:
@@ -374,10 +401,14 @@ def btPoller():
             processAdvertisement(intercept)
 
         except IndexError:
-            break;
-            
+            break
+
     root.after(100, btPoller)
+
+
+btQueue = deque(maxlen=1000)
+bt = BTAdapter(root, btQueue)
+bt.start()
+signal.signal(signal.SIGINT, signal_handler)
 btPoller()
-
-
 root.mainloop()
