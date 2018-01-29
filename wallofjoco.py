@@ -288,7 +288,7 @@ root.overrideredirect(False)
 root.attributes("-fullscreen", True)
 root.configure(background=bgcolor)
 
-heading = Label(root, text="Wall of Bender", bg=bgcolor, font=("Droid Sans Mono", 120))
+heading = Label(root, text="Wall of JoCo", bg=bgcolor, font=("Droid Sans Mono", 120))
 heading.place(x=margin, y=margin-40, anchor=NW)
 credit = Label(root, text="Brought to you by Abraxas3D and Skunkwrx with thanks to AND!XOR and DEFCON Group San Diego",
     fg="#888888", bg=bgcolor, font=("Droid Sans Mono", 9))
@@ -330,7 +330,7 @@ def badgeParse(data):
         elif packet_type == 0x19:   # Appearance
             badge_year = "%02X%d" % (packet_payload[0], packet_payload[1])
         elif packet_type == 0xFF:   # Manufacturer Specific Data
-            if packet_payload[1] == 0x04 and packet_payload[0] == 0x9e:     # AND!XOR LLC
+            if packet_payload[1] == 0x0b and packet_payload[0] == 0x25:     # JoCo 2018
                 badge_id = "%02X%02X" % (packet_payload[3],packet_payload[2])
                 badge = True
             else:
