@@ -45,7 +45,7 @@ BADGE_CLLD = "lld"    # claimed last level dispensed
 BADGE_CSCORE = "csc"  # claimed current score
 BADGE_TYPE = "ty"     # Badge type (Company ID)
 
-MAIN_DISPLAY_FONTSIZE = 44
+MAIN_DISPLAY_FONTSIZE = 40
 
 
 class BTAdapter (threading.Thread):
@@ -162,14 +162,14 @@ class Logger:
 
 class LiveDisplay:
     def __init__(self, master):
-        self.live_canvas = Canvas(master, width=494, height=430, bg=tablebg, borderwidth=0, highlightthickness=0)
-        self.live_text = self.live_canvas.create_text(tmargin, tmargin, anchor=NW, text="", font=("Droid Sans Mono", 44))
+        self.live_canvas = Canvas(master, width=370, height=505, bg=tablebg, borderwidth=0, highlightthickness=0)
+        self.live_text = self.live_canvas.create_text(tmargin, tmargin, anchor=NW, text="", font=("Droid Sans Mono", 32))
         self.live_canvas.place(x=screenw-margin, y=screenh-margin, anchor=SE)
         self.lines = deque()
 
     def intercept(self, badge):
         line = "%s %s" % (badge[BADGE_ID], badge[BADGE_NAME])
-        if len(self.lines) >= 6:
+        if len(self.lines) >= 10:
             self.lines.popleft()
         self.lines.append(line)
         self.live_canvas.itemconfigure(self.live_text, text="\n".join(self.lines))
@@ -197,10 +197,9 @@ class SmoothScroller:
         self.master.after(self.wait, self.scroll)
 
 
-"""
 class NamesDisplay (SmoothScroller):
     def __init__(self, master):
-        SmoothScroller.__init__(self, master, width=304, height=680, x=margin+912+margin, y=350, wait=20)
+        SmoothScroller.__init__(self, master, width=265, height=680, x=margin+1080+margin, y=350, wait=20)
         self.lines = deque()
         self.scroll()
 
@@ -211,14 +210,13 @@ class NamesDisplay (SmoothScroller):
             #print("LINE .%s." % line)
             self.lines.append(badge[BADGE_NAME])
             self.canvas.itemconfigure(self.text, text="\n".join(self.lines))
-"""
 
 
 class BadgeDisplay (SmoothScroller):
     def __init__(self, master):
         self.master = master
         self.badges = {}
-        SmoothScroller.__init__(self, master, width=1216, height=750, x=margin, y=275, wait=30)
+        SmoothScroller.__init__(self, master, width=1080, height=750, x=margin, y=275, wait=30)
         self.lines = deque()
         self.scroll()
         self.updater()
@@ -310,22 +308,22 @@ root.configure(background=bgcolor)
 
 heading = Label(root, text="Wall of JoCo", bg=bgcolor, font=("Droid Sans Mono", 120))
 heading.place(x=margin, y=margin-40, anchor=NW)
-credit = Label(root, text="Brought to you by Abraxas3D and Skunkwrx with thanks to AND!XOR and DEFCON Group San Diego",
+credit = Label(root, text="Brought to you by Phase4Ground with thanks to AND!XOR",
                fg="#888888", bg=bgcolor, font=("Droid Sans Mono", 9))
 credit.place(x=margin+18, y=170, anchor=NW)
 badges_label = Label(root, text="   ID  Name      Score      Seen", bg=bgcolor, font=("Droid Sans Mono", MAIN_DISPLAY_FONTSIZE))
-badges_label.place(x=margin, y=200, anchor=NW)
-# names_label = Label(root, text="Names", bg=bgcolor, font=("Droid Sans Mono", 50))
-# names_label.place(x=margin+912+margin, y=250, anchor=NW)
-live_label = Label(root, text="Intercepts", bg=bgcolor, font=("Droid Sans Mono", 60))
-live_label.place(x=margin+912+margin+304+margin, y=480, anchor=NW)
+badges_label.place(x=margin, y=210, anchor=NW)
+names_label = Label(root, text="Names", bg=bgcolor, font=("Droid Sans Mono", 50))
+names_label.place(x=margin+1085+margin, y=265, anchor=NW)
+live_label = Label(root, text="Intercepts", bg=bgcolor, font=("Droid Sans Mono",44))
+live_label.place(x=margin+912+margin+435+margin, y=460, anchor=NW)
 
 img = ImageTk.PhotoImage(Image.open("badge_photo.png").convert("RGBA"))
 photo_panel = Label(root, image=img, borderwidth=0, bg=bgcolor)
 photo_panel.place(x=screenw-margin, y=margin, anchor=NE)
 
 badge_display = BadgeDisplay(root)
-# names_display = NamesDisplay(root)
+names_display = NamesDisplay(root)
 live_display = LiveDisplay(root)
 log = Logger()
 
@@ -383,7 +381,7 @@ def processAdvertisement(cept):
     if badge is not None:
         badge[BADGE_TIME] = timestamp
         live_display.intercept(badge)
-#        names_display.intercept(badge)
+        names_display.intercept(badge)
         badge_display.intercept(badge)
         log.intercept(cept)
 
