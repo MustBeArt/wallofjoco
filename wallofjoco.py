@@ -41,7 +41,7 @@ BADGE_TIME = "tm"     # time of most recent advertisement received
 BADGE_ADDR = "ad"     # Advertising Address for this badge (assumed constant)
 BADGE_CNT = "n"       # number of advertisements received from this address
 BADGE_ID_FAKED = "faked"    # present if multiple IDs seen for this address
-BADGE_CLLD = "lld"    # claimed last level dispensed
+BADGE_CTRINKET = "tkt"    # claimed to deserve a trinket
 BADGE_CSCORE = "csc"  # claimed current score
 BADGE_TYPE = "ty"     # Badge type (Company ID)
 
@@ -205,9 +205,9 @@ class NamesDisplay (SmoothScroller):
 
     def intercept(self, badge):
         if badge[BADGE_NAME] not in self.lines:
-            #print("BADGE NAME .%s." % badge[BADGE_NAME])
-            #line = badge[BADGE_NAME] + " "*(8-len(badge[BADGE_NAME]))
-            #print("LINE .%s." % line)
+            # print("BADGE NAME .%s." % badge[BADGE_NAME])
+            # line = badge[BADGE_NAME] + " "*(8-len(badge[BADGE_NAME]))
+            # print("LINE .%s." % line)
             self.lines.append(badge[BADGE_NAME])
             self.canvas.itemconfigure(self.text, text="\n".join(self.lines))
 
@@ -252,11 +252,11 @@ class BadgeDisplay (SmoothScroller):
             name = b[BADGE_NAME]
             typ = b[BADGE_TYPE]
             if typ == BADGE_TYPE_JOCO:
-                if b[BADGE_CSCORE] >= 2000:
+                if b[BADGE_CSCORE] >= 1000:
                     score = "%2d,%03d" % (b[BADGE_CSCORE]/1000, b[BADGE_CSCORE] % 1000)
                 else:
                     score = " %5d" % b[BADGE_CSCORE]
-                if b[BADGE_CSCORE] > (b[BADGE_CLLD]+1)*250:   # eligible for a trinket
+                if b[BADGE_CTRINKET] != 0:   # claims to be eligible for a trinket
                     flag = "!"
             else:
                 score = "   N/A"
@@ -289,6 +289,8 @@ class BadgeDisplay (SmoothScroller):
                 b[BADGE_YEARS].append(badge[BADGE_YEAR])
             if len(b[BADGE_IDS]) > 1:
                 b[BADGE_ID_FAKED] = True
+            b[BADGE_CTRINKET] = badge[BADGE_CTRINKET]
+            b[BADGE_CSCORE] = badge[BADGE_CSCORE]
             # do not call self.update_display()
 
 
@@ -315,7 +317,7 @@ badges_label = Label(root, text="   ID  Name      Score      Seen", bg=bgcolor, 
 badges_label.place(x=margin, y=210, anchor=NW)
 names_label = Label(root, text="Names", bg=bgcolor, font=("Droid Sans Mono", 50))
 names_label.place(x=margin+1085+margin, y=265, anchor=NW)
-live_label = Label(root, text="Intercepts", bg=bgcolor, font=("Droid Sans Mono",44))
+live_label = Label(root, text="Intercepts", bg=bgcolor, font=("Droid Sans Mono", 44))
 live_label.place(x=margin+912+margin+435+margin, y=460, anchor=NW)
 
 img = ImageTk.PhotoImage(Image.open("badge_photo.png").convert("RGBA"))
@@ -336,6 +338,7 @@ def badgeParse(data):
 
     index = 14
     badge = False
+    badge_name = None
     while (index < len(data)-1):
         packet_len = data[index]
         packet_type = data[index+1]
@@ -352,12 +355,13 @@ def badgeParse(data):
             badge_type = (packet_payload[1] << 8) + packet_payload[0]
             if badge_type == BADGE_TYPE_JOCO:
                 badge_id = "%02X%02X" % (packet_payload[3], packet_payload[2])
-                badge_claimed_lld = packet_payload[4]
-                badge_claimed_score = (packet_payload[5] << 8) + packet_payload[6]
+                badge_claimed_score = (packet_payload[4] << 8) + packet_payload[5]
+                badge_claimed_trinket = badge_claimed_score & 0x8000
+                badge_claimed_score = badge_claimed_score & 0x7FFF
                 badge = True
             elif badge_type == BADGE_TYPE_ANDNXOR:
                 badge_id = "%02X%02X" % (packet_payload[3], packet_payload[2])
-                badge_claimed_lld = 0
+                badge_claimed_trinket = 0
                 badge_claimed_score = -1   # so it always sorts below JoCo badges
                 badge = True
             else:
@@ -368,7 +372,7 @@ def badgeParse(data):
                 BADGE_ID:     badge_id,
                 BADGE_NAME:   badge_name,
                 BADGE_YEAR:   badge_year,
-                BADGE_CLLD:   badge_claimed_lld,
+                BADGE_CTRINKET:   badge_claimed_trinket,
                 BADGE_CSCORE: badge_claimed_score,
                 BADGE_TYPE:   badge_type}
     else:
