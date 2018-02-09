@@ -27,6 +27,9 @@ from tkinter import *
 from PIL import ImageTk, Image
 from collections import deque
 import threading
+import gatt
+import joco_crypto
+import random
 
 BADGE_TYPE_JOCO = 0x0b25
 BADGE_TYPE_ANDNXOR = 0x049e
@@ -169,9 +172,12 @@ class LiveDisplay:
 
     def intercept(self, badge):
         line = "%s %s" % (badge[BADGE_ID], badge[BADGE_NAME])
+        self.logtext(line)
+
+    def logtext(self, text):
         if len(self.lines) >= 10:
             self.lines.popleft()
-        self.lines.append(line)
+        self.lines.append(text)
         self.live_canvas.itemconfigure(self.live_text, text="\n".join(self.lines))
 
 
@@ -294,13 +300,77 @@ class BadgeDisplay (SmoothScroller):
             # do not call self.update_display()
 
 
+class TermDisplay:
+    def __init__(self, master):
+        self.term_canvas = Canvas(master, width=1200, height=750, bg=termbg, borderwidth=0, highlightthickness=0)
+        self.term_text = self.term_canvas.create_text(widemargin, widemargin, anchor=NW, text="", font=("Droid Sans Mono", 32))
+        self.lines = deque()
+        self.showing = False
+        
+    def show(self):
+        if not self.showing:
+            self.term_canvas.place(x=1920/2, y=1024/2, anchor=CENTER)
+            self.showing = True
+
+    def hide(self):
+        if self.showing:
+            self.term_canvas.place_forget()
+            self.showing = False
+        
+    def logtext(self, text):
+        if len(self.lines) >= 14:
+            self.lines.popleft()
+        self.lines.append(text)
+        self.term_canvas.itemconfigure(self.term_text, text="\n".join(self.lines))
+
+    def clear(self):
+        self.lines.clear()
+
+class BadgeDevice(gatt.Device):
+    def connect_succeeded(self):
+        super().connect_succeeded()
+        live_display.logtext("Connected")
+
+    def connect_failed(self, error):
+        super().connect_failed(error)
+        live_display.logtext("Failed")
+
+    def disconnect_succeeded(self):
+        super().disconnect_succeeded()
+        live_display.logtext("Disconnected")
+
+    def services_resolved(self):
+        super().services_resolved()
+        score_service = next(
+            s for s in self.services
+            if s.uuid == '0000bd7e-0000-1000-8000-00805f9b34fb')
+        encrypted_score = next(
+            c for c in score_service.characteristics
+            if c.uuid == '00002e15-0000-1000-8000-00805f9b34fb')
+        encrypted_score.read_value()
+        live_display.logtext("Reading")
+
+    def characteristic_value_update(self, characteristic, value):
+        result = joco_crypto.eval_score_characteristic(value)
+        if result is None:
+            live_display.logtext("Invalid")
+        else:
+            live_display.logtext("%s %d %d" % result)
+        device.disconnect()
+        manager.stop()
+
+    def characteristic_read_value_failed(self, characteristic, error):
+        live_display.logtext("Read failed.")
+        
+            
 margin = 50
 tmargin = 5
+widemargin = 40
 screenh = 1080
 screenw = 1920
 bgcolor = "#ffe298"
 tablebg = "#eed288"
-
+termbg = "#00ff00"
 
 root = Tk()
 root.overrideredirect(True)
@@ -327,9 +397,28 @@ photo_panel.place(x=screenw-margin, y=margin, anchor=NE)
 badge_display = BadgeDisplay(root)
 names_display = NamesDisplay(root)
 live_display = LiveDisplay(root)
+term_display = TermDisplay(root)
 log = Logger()
 
 
+def click_callback(event):
+    live_display.logtext("Click!")
+    term_display.show()
+    term_display.logtext("random %d" % random.randint(1,10000))
+    #manager = gatt.DeviceManager(adapter_name='hci1') # separate adapter
+    #device = BadgeDevice(mac_address='e2:15:e5:53:f2:0c', manager=manager)
+    #device.connect()
+    #manager.run()
+    live_display.logtext("Done.")
+
+def rclick_callback(event):
+    live_display.logtext("Right click!")
+    term_display.hide()
+    term_display.clear()
+
+photo_panel.bind("<Button-1>", click_callback)
+photo_panel.bind("<Button-3>", rclick_callback)
+                  
 def badgeParse(data):
     """ If the advertisement data contains a valid badge beacon,
     return the parsed badge data structure. If not, return None."""
@@ -407,7 +496,7 @@ def btPoller():
 
     root.after(100, btPoller)
 
-
+    
 btQueue = deque(maxlen=1000)
 bt = BTAdapter(root, btQueue)
 bt.start()
