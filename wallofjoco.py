@@ -18,7 +18,9 @@ from ctypes.util import find_library
 from socket import (
     socket,
     AF_BLUETOOTH,
+    AF_INET,
     SOCK_RAW,
+    SOCK_STREAM,
     BTPROTO_HCI,
     SOL_HCI,
     HCI_FILTER,
@@ -30,6 +32,10 @@ import threading
 import gatt
 import joco_crypto
 import random
+
+# With this address set to localhost, the socket should not be visible
+# to hosts on the network, just from the local machine.
+termaddr = ("localhost", 9999)
 
 BADGE_TYPE_JOCO = 0x0b25
 BADGE_TYPE_ANDNXOR = 0x049e
@@ -67,7 +73,7 @@ class BTAdapter (threading.Thread):
         self.bluez = CDLL(btlib, use_errno=True)
 
         dev_id = self.bluez.hci_get_route(None)
-
+        
         self.sock = socket(AF_BLUETOOTH, SOCK_RAW, BTPROTO_HCI)
         if not self.sock:
             print("Failed to open Bluetooth")
@@ -303,7 +309,7 @@ class BadgeDisplay (SmoothScroller):
 class TermDisplay:
     def __init__(self, master):
         self.term_canvas = Canvas(master, width=1200, height=750, bg=termbg, borderwidth=0, highlightthickness=0)
-        self.term_text = self.term_canvas.create_text(widemargin, widemargin, anchor=NW, text="", font=("Droid Sans Mono", 32))
+        self.term_text = self.term_canvas.create_text(widemargin, widemargin, anchor=NW, text="", font=("Droid Sans Mono", 48))
         self.lines = deque()
         self.showing = False
         
@@ -361,8 +367,8 @@ class BadgeDevice(gatt.Device):
 
     def characteristic_read_value_failed(self, characteristic, error):
         live_display.logtext("Read failed.")
-        
-            
+
+
 margin = 50
 tmargin = 5
 widemargin = 40
@@ -392,7 +398,7 @@ live_label.place(x=margin+912+margin+435+margin, y=460, anchor=NW)
 
 img = ImageTk.PhotoImage(Image.open("badge_photo.png").convert("RGBA"))
 photo_panel = Label(root, image=img, borderwidth=0, bg=bgcolor)
-photo_panel.place(x=screenw-margin, y=margin, anchor=NE)
+photo_panel.place(x=screenw-margin/2, y=margin/2, anchor=NE)
 
 badge_display = BadgeDisplay(root)
 names_display = NamesDisplay(root)
@@ -496,7 +502,27 @@ def btPoller():
 
     root.after(100, btPoller)
 
-    
+
+def terminal_thread():
+    global termsocket, term_display
+    while True:
+        (sock, address) = termsocket.accept()       # blocking
+        term_display.show()
+        stuff = sock.recv(512)
+        while len(stuff) != 0:
+            for line in stuff.decode('ascii').splitlines():
+                term_display.logtext(line)
+            stuff = sock.recv(512)
+        term_display.hide()
+        term_display.clear()
+
+
+termsocket = socket(AF_INET, SOCK_STREAM)
+termsocket.bind(termaddr)
+termsocket.listen(5)
+termthread = threading.Thread(target=terminal_thread)
+termthread.start()
+
 btQueue = deque(maxlen=1000)
 bt = BTAdapter(root, btQueue)
 bt.start()
