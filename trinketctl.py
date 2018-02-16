@@ -85,6 +85,15 @@ def put_badge_lld(lld):
     return True
 
 
+def badge_increment_lld(mac):
+    try:
+        result = check_output(("./badge_gatt_lldi.py",
+                               "--gapAddress", mac))
+    except CalledProcessError:
+        pass
+
+
+
 def talk_to_badge(nfc_msg):
     name = nfc_msg[16:].split('\x00', 1)[0]
     mac = ':'.join((nfc_msg[10:12], nfc_msg[8:10], nfc_msg[6:8],
@@ -109,7 +118,7 @@ def talk_to_badge(nfc_msg):
         if score is not None:
             ipc.send("Your score is %d" % score)
             if score < (lld+1)*250:
-                ipc.send("Try when it reaches %d" % ((lld+1)*250))
+                ipc.send("Try again when it reaches %d" % ((lld+1)*250))
             else:
                 ipc.send("Eligible for a trinket!")
                 if check_dispenser_idle():
@@ -119,7 +128,8 @@ def talk_to_badge(nfc_msg):
                         if await_dispenser_done():
                             ipc.send("Please take your gift")
                             trinket_log(mac)
-                            put_badge_lld(lld+1)
+                            # put_badge_lld(lld+1)
+                            badge_increment_lld(mac)
                         else:
                             ipc.send("Oops, I'm broken!")
                             ipc.send("Please ask for help")
@@ -158,6 +168,7 @@ def on_SIGHUP_handler(signalnum, frame):
 running = True
 signal.signal(signal.SIGHUP, on_SIGHUP_handler)
 
+print("Waiting for NFC appearance.")
 
 with nfc.ContactlessFrontend('tty:S0:pn532') as clf:
     while running:
