@@ -443,7 +443,7 @@ def badgeParse(data):
             if int(packet_payload[0]) != 0x06:
                 badge = False
         elif packet_type == 0x09:   # Local Name
-            badge_name = packet_payload.decode("utf-8")
+            badge_name = packet_payload.decode("utf-8").upper()
         elif packet_type == 0x19:   # Appearance
             badge_year = "%02X%d" % (packet_payload[0], packet_payload[1])
         elif packet_type == 0xFF:   # Manufacturer Specific Data
