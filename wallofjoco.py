@@ -33,6 +33,8 @@ import gatt
 import joco_crypto
 import random
 
+wait_factor = 50
+
 # With this address set to localhost, the socket should not be visible
 # to hosts on the network, just from the local machine.
 termaddr = ("localhost", 9999)
@@ -190,7 +192,7 @@ class LiveDisplay:
 class SmoothScroller:
     def __init__(self, master, width, height, x, y, wait):
         self.master = master
-        self.wait = wait
+        self.wait = wait * wait_factor
         self.height = height
         self.canvas = Canvas(master, width=width, height=height, bg=tablebg, borderwidth=0, highlightthickness=0)
         self.text = self.canvas.create_text(tmargin, tmargin, anchor=NW, text="", font=("Droid Sans Mono", MAIN_DISPLAY_FONTSIZE))
@@ -200,10 +202,10 @@ class SmoothScroller:
     def scroll(self):
         left, top, right, bottom = self.canvas.bbox(ALL)
         if bottom > self.height:
-            self.canvas.move(self.text, 0, -1)
+            self.canvas.move(self.text, 0, -wait_factor)
         elif top < 0:
             if bottom > 0:
-                self.canvas.move(self.text, 0, -1)
+                self.canvas.move(self.text, 0, -wait_factor)
             else:
                 self.canvas.move(self.text, 0, -top + self.height)
         self.master.after(self.wait, self.scroll)
@@ -275,7 +277,7 @@ class BadgeDisplay (SmoothScroller):
             t = self.format_time_ago(b[BADGE_TIME], timenow)
             line = flag + " " + ident + " " + name + " "*(8-len(name)) + " " + score + " " + t
             self.lines.append(line)
-            self.canvas.itemconfigure(self.text, text="\n".join(self.lines))
+        self.canvas.itemconfigure(self.text, text="\n".join(self.lines))
 
     def intercept(self, badge):
         if badge[BADGE_ADDR] not in self.badges:
