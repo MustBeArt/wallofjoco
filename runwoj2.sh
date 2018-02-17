@@ -11,6 +11,8 @@ do
   ./wallofjoco.py &
   sleep 30
   sudo rfkill unblock 2
+  echo Resetting NFC
+  ./resetnfc.py
   echo Running trinket control
   ./trinketctl.py
   pkill wallofjoco.py
