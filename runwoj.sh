@@ -1,3 +1,3 @@
 #!/bin/sh
-lxterminal -e ./runwoj2.sh
+  lxterminal -e ./runwoj2.sh
 
