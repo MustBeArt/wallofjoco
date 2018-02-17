@@ -7,13 +7,13 @@ import RPi.GPIO as GPIO
 from datetime import datetime
 import wall_ipc
 from wiringpi2 import millis, delay
-from subprocess import check_output, CalledProcessError
+from subprocess32 import check_output, CalledProcessError, TimeoutExpired
 
 max_trinkets = 7
 dispenser_strobe_pin = 23
 dispenser_busy_pin = 24
 dispenser_start_wait_ms = 200
-dispenser_finish_wait_ms = 10000
+dispenser_finish_wait_ms = 15000
 window_close_delay_ms = 5000
 
 GPIO.setmode(GPIO.BCM)
@@ -68,13 +68,14 @@ def get_badge_info(mac, device_id):
     try:
         result = check_output(("./badge_gatt_score.py",
                                              "--gapAddress", mac,
-                                             "--deviceID", device_id))
+                                             "--deviceID", device_id),
+                              timeout=30)
         (devid, score, lld) = result.split()
         if devid.lower() == device_id.lower():
             return (score, lld)
         else:
             print("Device ID mismatch. NFC: %s GATT: %s" % (device_id, devid))
-    except CalledProcessError:
+    except (CalledProcessError, TimeoutExpired):
         pass
     return (None, None)
 
@@ -88,9 +89,12 @@ def put_badge_lld(lld):
 def badge_increment_lld(mac):
     try:
         result = check_output(("./badge_gatt_lldi.py",
-                               "--gapAddress", mac))
-    except CalledProcessError:
-        pass
+                               "--gapAddress", mac),
+                              timeout=30)
+    except (CalledProcessError, TimeoutExpired):
+        return False
+
+    return True
 
 
 
@@ -112,34 +116,38 @@ def talk_to_badge(nfc_msg):
         trinket_log(mac)    # Log extra attempts just for fun
     else:
         (score, lld) = get_badge_info(mac, device_id)
-        score = int(score)
-        lld = int(lld)
-        print "GATT reported score=%d lld=%d" % (score, lld)
         if score is not None:
-            ipc.send("Your score is %d" % score)
-            if score < (lld+1)*250:
-                ipc.send("Try again when it reaches %d" % ((lld+1)*250))
-            else:
-                ipc.send("Eligible for a trinket!")
-                if check_dispenser_idle():
-                    pulse_dispenser()
-                    if await_dispenser_start():
-                        ipc.send("Here's a gift for you!")
-                        if await_dispenser_done():
-                            ipc.send("Please take your gift")
-                            trinket_log(mac)
-                            # put_badge_lld(lld+1)
-                            badge_increment_lld(mac)
-                        else:
-                            ipc.send("Oops, I'm broken!")
-                            ipc.send("Please ask for help")
-                    else:
-                        ipc.send("Dispenser not responding")
-                        ipc.send("Try again later")
+            score = int(score)
+            lld = int(lld)
+            print "GATT reported score=%d lld=%d" % (score, lld)
+            if score is not None:
+                ipc.send("Your score is %d" % score)
+                if score < (lld+1)*250:
+                    ipc.send("Try again when it reaches %d" % ((lld+1)*250))
                 else:
-                    ipc.send("Dispenser busy!")
-                    ipc.send("Try again later")
-
+                    ipc.send("Eligible for a trinket!")
+                    if check_dispenser_idle():
+                        pulse_dispenser()
+                        if await_dispenser_start():
+                            ipc.send("Here's a gift for you!")
+                            if await_dispenser_done():
+                                ipc.send("Please take your gift")
+                                trinket_log(mac)
+                                # put_badge_lld(lld+1)
+                                if not badge_increment_lld(mac):
+                                    ipc.send("Where did you go?")
+                            else:
+                                ipc.send("Oops, I'm broken!")
+                                ipc.send("Please ask for help")
+                        else:
+                            ipc.send("Dispenser not responding")
+                            ipc.send("Try again later")
+                    else:
+                        ipc.send("Dispenser busy!")
+                        ipc.send("Try again later")
+        else:
+            ipc.send("Where did you go?")
+            
     delay(window_close_delay_ms)
     ipc.close()
 
